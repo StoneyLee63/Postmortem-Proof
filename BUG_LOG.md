@@ -118,13 +118,29 @@ Anthropic Course work / CCA-F exam prep vehicle. 13-stage pipeline: raw API → 
 
 ---
 
-## Patterns Across All Eight
+## Project: Engine Room (Claude Code configuration)
+A project wired by hand with Claude Code's own configuration layers, one at a time, memory, rules, permissions, hooks, skills, subagents and MCP.
 
-Read together, these aren't eight unrelated mistakes — they cluster into a small number of recurring failure categories that show up again whether the language is Bash or Python, whether the project is a CLI tool or an agent pipeline:
+### Bug 9, Claude Code in WSL was the Windows install the whole time
+**Symptom:** While building a permission deny rule for `rm` in a WSL project, the `/permissions` Deny tab showed the rule plus a second one nobody wrote, `PowerShell`. The session header showed the project as `\\wsl.localhost\Ubuntu\home\ltksol\engine-room` instead of `/home/ltksol/engine-room`. Earlier sessions had left smaller clues that went unexplained, Claude naming `C:\Users\Lenovo\.claude\CLAUDE.md` as the user memory file and reporting that Python was not installed.
+
+**Root cause:** Two layers of the same mistake. The Claude Code tab in VS Code launched the Windows install of Claude Code, and passed `PowerShell`, a Windows-only tool, as a CLI argument. Inside the WSL terminal itself, `claude` resolved to the Windows npm copy at `/mnt/c/Users/Lenovo/AppData/Roaming/npm/claude`, because WSL appends the Windows folders to PATH and the shell runs the first match it finds. A Linux install already existed at `~/.hermes/node/bin/claude`, sitting behind it in line.
+
+**Diagnosis:** Selected each deny rule in `/permissions` to read its source. `Bash(rm:*)` came from shared project settings. `PowerShell` came from a CLI argument, and none had been passed by hand, so something else had launched the session. Then `which claude` from WSL printed a `/mnt/c/` path, and `type -a claude` listed every match in PATH order, Windows first, Linux second.
+
+**Fix:** Prepended the Linux folder in `~/.bashrc` with `export PATH="$HOME/.hermes/node/bin:$PATH"`, ran `source ~/.bashrc` and `hash -r` so the open shell stopped using the remembered location, and confirmed `which claude` pointed at the Linux path. Sessions now launch only from the WSL bash terminal. On the Linux install the Deny tab showed the project rule and nothing else.
+
+**What it teaches:** This is Bug 5 again on a different surface, a command name resolving to a different binary than the one assumed. Nothing crashed. Every rule built in earlier sessions still worked, which is exactly why the wrong platform went unnoticed for a week. It would have surfaced the hard way at the next step, hook scripts, which run in whatever shell the install uses. Before building on a tool, confirm which copy actually runs with `which` and `type -a`. And when a control shows up that nobody wrote, trace its source before deleting it, the source is the clue.
+
+---
+
+## Patterns Across All Nine
+
+Read together, these aren't nine unrelated mistakes — they cluster into a small number of recurring failure categories that show up again whether the language is Bash or Python, whether the project is a CLI tool or an agent pipeline:
 
 **Silent failures over loud crashes.** Bugs 4, 5, and 8 all produced clean-looking output with nothing actually wrong on the surface. None of them would have been caught by "did it run without an error." Each needed an independent check — input/output count, expected-vs-actual, a zero floor — that didn't rely on the tool honestly reporting its own failure.
 
-**Environment and scope assumptions left unverified.** Bugs 2, 5, and 7 all trace back to trusting an assumed environment (this is a git repo, this is the right interpreter, this stage only sees its own config) instead of confirming it. Same root shape, three different surfaces.
+**Environment and scope assumptions left unverified.** Bugs 2, 5, 7, and 9 all trace back to trusting an assumed environment (this is a git repo, this is the right interpreter, this stage only sees its own config, this is the Linux install) instead of confirming it. Same root shape, four different surfaces.
 
 **Controls that exist in code but don't actually engage.** Bug 6 is the clearest version of this — a permission gate that was correctly written but never reachable. Worth flagging on its own because it's the failure mode most likely to matter directly in security work: a control that looks present in a code review but never actually fires in production.
 
